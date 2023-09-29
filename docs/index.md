@@ -1,14 +1,50 @@
 # Adam
-Adam, it's not an acronym. My wife named it because it is the first homebrew computer I have built and I suspect the last. The design first started in about 2019 and inspiration came from [Ben Eaters](https://www.youtube.com/c/beneater) excellent [8-bit breadboard computer](https://www.youtube.com/playlist?list=PLowKtXNTBypGqImE405J2565dvjafglHU) videos. The other major influence is from [Bill Buzbee's](http://www.homebrewcpu.com/about_me.htm) [Magic-1](http://www.homebrewcpu.com/) homebrew CPU.
 
-Adam is a homebrew, 32-bit, microcoded, transport triggered architecture CPU and computer with fast context switching, fast interrupt handling and MMU. It was not at first clear that the outline design was for a transport triggered architecture, or that such an architecture had a name, until [this article](https://hackaday.com/2017/04/21/an-8-bit-transport-triggered-architecture-cpu-in-ttl/) was stumbled upon.
+Adam, it's not an acronym. My wife named it because it is the first homebrew 
+computer I have built and I suspect the last.
+The design first started in about 2019 and inspiration came from [Ben Eaters]
+excellent [8-bit breadboard computer] videos. The other major influence is from
+[Bill Buzbee's] [Magic-1] homebrew CPU.
 
-By homebrew it is meant that it is not based on some pre-existing cpu or computer design, it will be built from mainly 74' series logic chips with no microcontrollers or other complex components. Liberal use of SRAM is expected.
+Adam is a homebrew, 16-bit, microcoded, transport triggered architecture CPU and
+computer. It was not at first clear that the outline design was a transport
+triggered architecture, or that such an architecture had a name, until [this
+article] was stumbled upon.
 
-The computer will comprise a set of modules connected by a common [bus](./interconnectDesign.md). Each module will be built using 102mmx102mm PCBs. This size is chosen as it is the maximum size for the highly discounted pcb manufacture by [JLC PCB](https://jlcpcb.com/); there is a jump in the price above this size. Also, the 102mm side gives enough room for a 2x40 2.54mm pitch pin header. The modules will be connected to a backplane, itself comprising a set of 102mm square pcbs each with a number of 2x40 headers.
+By homebrew it is meant that it is not based on some pre-existing cpu or
+computer design, it will be built from mainly 74' series logic chips with no
+microcontrollers or other complex components. Liberal use of SRAM is expected.
 
-The term 'fast context switching' and 'fast interrupt handling' means relatively fast compared to the CPU speed, i.e. context switches should occur and interrupt handlers should be started in not many cpu cycles. The reason for 'fast' context switching is because the wikipedia article on [transport triggered architecture](https://en.wikipedia.org/wiki/Transport_triggered_architecture) suggests that efficient context switching in a TTA architecture is complex so let's give it a go. The main defence against slow context switching is hardware based contexts with each context being given its own state and thus enabling a context switch by simply changing a single register provided by the [Context](./modules/context.md) module. This does mean that normal use of registers is difficult hence the liberal use of SRAM in place of registers. The 'current context' forms the address into the various SRAM chips that represent the context sensitive state (registers); an efficient design is not among the objectives.
+The computer will comprise a set of modules connected by a common [bus]. Each
+module will be built using 102mmx102mm PCBs. This size is chosen as it is the
+maximum size for the highly discounted pcb manufacture by [JLC PCB]; there is a
+jump in the price above this size. Also, the 102mm side gives enough room for a
+2x40 2.54mm pitch pin header. The modules will be connected to a backplane,
+itself comprising a set of 102mm square pcbs each with a number of 2x40 headers.
 
-Being a transport triggered architecture, there is only one instruction and it is of the form `dst = src`. There are 127 read/write ports, which can act as source or destination, and 512 read-only ports, which can only act as source, giving an instruction size of 16 bits; 9 bits for source and 7 bits for destination. Of the 512 read-only ports, 256 are set-aside as constants with the ports 256 to 511 mapped onto the constants 0 to 255. The [Constants](./modules/constants.md) module is responsible for copying the lower 8 bits of the `src` to the data bus.
+The CPU is microcoded with a 16 bit microcode instructions. Instructions are
+generally of the form `dst = src` where `dst` identifies a destination port and
+`src` identifies a source port. There are two formats for the instruction. Port
+format instructions have 5 bites each for the allow the source and destination
+ports allowing for 32 distinct ports. In addition, Port instructions include a
+conditional branch bit that will cause a conditional branch if a condition is
+met. Immediate format instructions allow an immediate 8-bit value encoded in the
+instruction as the source value but are limited to only the lower 8 destination
+ports identified with 3 bits. In both cases, a 4 bit destination option is also
+provided that the destination port can use to control the action performed.
 
-A microcode layer on the base target triggered architecture, and the single `dst = src` instruction, implements higher-level ISA. The microcode is editable from running code. The microcode is served by the [Microcode](./modules/microcode.md) module. The microcode program counter is implemented by the [Sequencer](./modules/sequencer.md) module and the [Rectifier](./modules/rectifier.md) module. The [Sequencer](./modules/sequencer.md) is used for normal, context sensitive, execution while the Rectifier is used when 'rectifying' a fault or interrupt and during startup and reset. The [Sequencer](./modules/sequencer.md) or [Rectifier](./modules/rectifier.md) place a 16 bit microcode address on the [bus](./interconnectDesign.md) and the [Microcode](./modules/microcode.md) responds by placing the 16 bit instruction on the bus. The [Sequencer](./modules/sequencer.md) is context sensitive, i.e. has state that depends on the hardware [Context](./modules/context.md), while the [Rectifier](./modules/rectifier.md) is context free.
+See [microcode architecture] for further details about the microcode.
+
+The microcode implements higher-level ISA. A stretch goal is for the microcode
+to be editable from running code. The microcode is served by the [Microcode]
+module.
+
+[Ben Eaters]: https://www.youtube.com/c/beneater
+[8-bit breadboard computer]: https://www.youtube.com/playlist?list=PLowKtXNTBypGqImE405J2565dvjafglHU
+[Bill Buzbee's]: http://www.homebrewcpu.com/about_me.htm
+[Magic-1]: http://www.homebrewcpu.com/
+[this article]: https://hackaday.com/2017/04/21/an-8-bit-transport-triggered-architecture-cpu-in-ttl/
+[bus]: ./interconnectDesign.md
+[JLC PCB]: https://jlcpcb.com/
+[Microcode]: ./modules/microcode.md
+[microcode architecture]: ./microcodeArchitecture.md
