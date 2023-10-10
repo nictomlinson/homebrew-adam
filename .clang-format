@@ -1,0 +1,36 @@
+---
+BasedOnStyle: Google
+---
+Language: Cpp
+AllowShortBlocksOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakBeforeMultilineStrings: false
+BreakBeforeBraces: Custom
+BreakStringLiterals: false
+ColumnLimit: 80
+ContinuationIndentWidth: 4
+DerivePointerAlignment: false
+IncludeBlocks: Merge
+IncludeCategories:
+  - Regex: ".*"
+    Priority: 1
+IncludeIsMainRegex: "(_test)?$"
+IndentCaseLabels: false
+IndentGotoLabels: false
+IndentWidth: 4
+PenaltyBreakAssignment: 10
+PenaltyBreakBeforeFirstCallParameter: 30
+PenaltyBreakComment: 10
+PenaltyBreakFirstLessLess: 0
+PenaltyBreakString: 10
+PenaltyExcessCharacter: 100
+PenaltyReturnTypeOnItsOwnLine: 60
+PointerAlignment: Right
+ReflowComments: true
+SortIncludes: true
+SpaceBeforeParens: ControlStatements
+SpacesBeforeTrailingComments: 1
+TabWidth: 4
+UseTab: Always

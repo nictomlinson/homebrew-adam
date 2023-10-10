@@ -1,0 +1,41 @@
+
+forget 
+
+  export on
+  def LDA 31
+  def XYZ LDA
+  def ABC 124
+  def OPT_1 1
+  def OPT_2 2
+  zet A0 A1 A2
+  set A3 A4 A5 Fred Bert load store A10
+  def TMP 0
+export off
+  cmdSet 0
+  page 0
+grp LDA {
+    2 = 2 ; comment line
+   ; comment line 2
+   ; comment line 3
+    3 = 4
+    end : 3 =: end
+    LDA = 5
+    3 =: end
+}
+grp TMP {
+  1 = 1
+  5 = 5
+}
+forget 
+export on
+
+  def xyz 5
+  def ABC 7
+
+export off
+
+grp ABC {
+  55 = xyz
+  ABC = ABC
+}
+; comment

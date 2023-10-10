@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "mcasm",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceRoot}/bin/mcasm",
+            "cwd": "${workspaceRoot}",
+            "args": [
+                "-o",
+                "mcCode",
+                "-t",
+                "./src/microcode/mcCode.asm"
+            ],
+                "MIMode": "gdb",
+                "miDebuggerPath": "/usr/bin/gdb",
+                "stopAtEntry": true
+        }
+    ]
+}
