@@ -1,0 +1,21 @@
+{
+        "C_Cpp.default.configurationProvider": "ms-vscode.makefile-tools",
+        "makefile.launchConfigurations": [
+                {
+                        "cwd": "/home/nic/src/homebrew-adam",
+                        "binaryPath": "/home/nic/src/homebrew-adam/bin/mcasm",
+                        "binaryArgs": [
+                                "-o",
+                                "bin/mccode.bin",
+                                "-t",
+                                "./src/ports.ucode",
+                                "./src/mcCode.ucode"
+                        ]
+                },
+                {
+                        "cwd": "/home/nic/src/homebrew-adam/bin",
+                        "binaryPath": "/home/nic/src/homebrew-adam/bin/mcasm",
+                        "binaryArgs": []
+                }
+        ]
+}

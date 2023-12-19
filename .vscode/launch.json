@@ -2,7 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "mcasm",
+            "name": "run mcasm with ucode",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceRoot}/bin/mcasm",
@@ -11,11 +11,13 @@
                 "-o",
                 "mcCode",
                 "-t",
-                "./src/microcode/mcCode.asm"
+                "./src/ports.ucode",
+                "./src/mcCode.ucode"
             ],
                 "MIMode": "gdb",
                 "miDebuggerPath": "/usr/bin/gdb",
-                "stopAtEntry": true
+                "stopAtEntry": true,
+                "preLaunchTask":
         }
     ]
 }

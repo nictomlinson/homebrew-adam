@@ -25,7 +25,7 @@ PenaltyBreakBeforeFirstCallParameter: 30
 PenaltyBreakComment: 10
 PenaltyBreakFirstLessLess: 0
 PenaltyBreakString: 10
-PenaltyExcessCharacter: 100
+PenaltyExcessCharacter: 1000
 PenaltyReturnTypeOnItsOwnLine: 60
 PointerAlignment: Right
 ReflowComments: true

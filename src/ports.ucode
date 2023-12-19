@@ -1,17 +1,142 @@
-; The set of Register 
-def R_A 0 ; Left ALU operand 
-def R_B 1 ; Right ALU operand 
-def R_ALU 2  ; On Read: ALU Result 
-def R_INC 3 ; Incrementor 
-def R_PEN 4 ; 16 bit Priority Encoder 
-def R_5 5
-def R_6 6 
-def R_PC 7
-def R_8 8 
-def R_9 9
-def R_10 10
-def R_11 11
-def R_MAR 12 ; Memory Address Register 
-def R_MEM 13 ; Memory data register 
-def R_CTX 14 ; context; base address for page table 
-def R_MCC 15 ; Microcode Control. Set conditional jump target, jump, interrupt enable flags, test conditions; read active interrupts and exceptions  
+; The set of ports and port options
+
+; -------------------------------------------
+; Port: 0
+	; Write: Microcode Counter 
+	;	dOpt[0,1] :
+	;		00 => jmp; step[3]=0, load Cmd from from main bus
+	;		01 => jmp; step[3]=1, load Cmd from from main bus
+	;		10 => branch; load step from main bus
+	;		11 => conditional branch;
+	;			load step from main bus if cnd true
+	;			else step++
+	;	dOpt2 : new value for Page when jumping
+	;	dOpt3 = 1 => toggle supversior mode
+	port p_mcc_jmpPge1 0b0100_000
+	port p_mcc_jmpPge0 0b0000_000
+	port mcc_tglSvr 0b1000
+	port p_mcc_brch 0b0010_000
+	port p_mcc_cndBrch 0b0011_000
+
+	; Read: Data/Return stack_ptr+offset:
+	; 	Stacks grow down
+	;	Port: 0
+	;		sOpt[3]: 0 => data stack, 1 => return stack
+	;		sOpt[2..0] => offset for the next read
+	;		-16, -14, -12, -10, -8, -6, -4, -2, +2, +4, +6, +8, +10, +12, +14, +16
+	; Read/Write stack_ptr:
+	;	Port: 8
+	; 
+	port p_dsOffset_nxt_psh1 0b0000_000
+	port p_dsOffset_nxt_psh2 0b0001_000
+	port p_dsOffset_nxt_psh3 0b0010_000
+	port p_dsOffset_nxt_psh4 0b0011_000
+	port p_dsOffset_nxt_pop1 0b0100_000
+	port p_dsOffset_nxt_pop2 0b0101_000
+	port p_dsOffset_nxt_pop3 0b0110_000
+	port p_dsOffset_nxt_pop4 0b0111_000
+
+	port p_rsOffset_nxt_psh1 0b1000_000
+	port p_rsOffset_nxt_psh2 0b1001_000
+	port p_rsOffset_nxt_psh3 0b1010_000
+	port p_rsOffset_nxt_psh4 0b1011_000
+	port p_rsOffset_nxt_pop1 0b1100_000
+	port p_rsOffset_nxt_pop2 0b1101_000
+	port p_rsOffset_nxt_pop3 0b1110_000
+	port p_rsOffset_nxt_pop4 0b1111_000
+
+; -------------------------------------------
+; Port: 1 
+	; Memory Management Unit
+	; write:
+	;	dOpt[3]=0: write vAddr
+	;		dOpt[2]: mode
+	;			1 => alt
+	;			0 => std
+	;			used by supervisor to
+	;			read user memory
+	;		dopt[0,1]: segment
+	;	dOpt[3]=1:
+	;		dOpt[2] other target
+	;			1 => write PageTable
+	;			0 => write memory
+	;		dOpt[1] not used
+	;		dOpt[0] => ~{mem8}
+	; Read:
+	;	sOpt[3,2]:
+	;		00 => read vAddr
+	;		01 => read PageTable
+	;		10 => read vPage Segment (seg0, seg1)
+	;		11 => read memory
+	;	sOpt[1]: unused
+	;	sOpt[0]=> ~{mem8}
+
+	port p_mar_seg_code   0b0000_001
+	port p_mar_seg_data   0b0001_001
+	port p_mar_seg_return 0b0001_001
+	port p_mar_seg_other  0b0011_001
+
+	port p_mar_alt_code   0b1000_001
+	port p_mar_alt_data   0b1001_001
+	port p_mar_alt_return 0b1001_001
+	port p_mar_alt_other  0b1011_001
+
+	port p_mem_w_pgetbl   0b1101_001
+	port p_mem_w_8        0b1000_001
+	port p_mem_w_16       0b1001_001
+
+	port p_mem_r_vAddr  0b0001_001
+	port p_mem_r_pgtbl  0b0101_001
+	port p_mem_r_seg    0b1001_001
+	port p_mem_r_mem_8  0b1100_001
+	port p_mem_r_mem_16 0b1101_001
+
+; -------------------------------------------
+; Port: 2
+	; Program Counter
+	;	Read:
+	;		sOpt[3]: 0 => Read PC
+	;			1 => Read PC+offset
+	;	Write:
+	;		sOpt[3]: 0 => write PC
+	;			1 not used by Program Counter
+	;	Read/Write:
+	;		sOpt[2]: 1 => check point
+	;			0 => no check point
+	;		sOpt[1..0] => nextOffset +1, +2, +3, +4
+	port p_pc_nxt1 0b0000_010
+	port p_pc_nxt2 0b0001_010
+	port p_pc_nxt3 0b0010_010
+	port p_pc_nxt4 0b0011_010
+
+	port pc_chkPt 0b0100
+
+	port p_pcOffset_nxt1 0b1000_010
+	port p_pcOffset_nxt2 0b1001_010
+	port p_pcOffset_nxt3 0b1010_010
+	port p_pcOffset_nxt4 0b1011_010
+
+; -------------------------------------------
+; Port 8
+	; opt[3..0] = 0010 => data stack
+	; opt[3..0] = 0011 => return stack
+	;	next offset unchanged on read
+	;	next offset =-2 (push) on write
+	port p_ds 0b0010_111
+	port p_rs 0b0011_111
+
+
+
+
+
+
+
+port p_a 0 ; Left ALU operand 
+port p_b 1 ; Right ALU operand 
+port p_alu 1  ; On Read: ALU Result 
+port p_inc 3 ; Incrementor 
+port p_pen 4 ; 16 bit Priority Encoder 
+port p_pc 5
+port p_mar 6 ; Memory Address Register 
+port p_mem 7 ; Memory data register 
+port p_ctx 8 ; context; base address for page table 

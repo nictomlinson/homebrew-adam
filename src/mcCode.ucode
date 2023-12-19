@@ -2,6 +2,7 @@
 forget 
 
   export on
+  def x123456 7
   def LDA 31
   def XYZ LDA
   def ABC 124
@@ -14,13 +15,15 @@ export off
   cmdSet 0
   page 0
 grp LDA {
-    2 = 2 ; comment line
+    p_mcc_jmpPge0 =# ABC
+    p_mar = p_rsOffset_nxt_pop1
+    p_a =# 2 ; comment line
    ; comment line 2
    ; comment line 3
-    3 = 4
-    end : 3 =: end
-    LDA = 5
-    3 =: end
+    p_mar = p_a
+    end : p_mcc_brch =: end ; infinite loop
+    p_a =# 5
+    p_alu =: end
 }
 grp TMP {
   1 = 1
@@ -35,7 +38,7 @@ export on
 export off
 
 grp ABC {
-  55 = xyz
-  ABC = ABC
+  p_b =? p_pc
+  p_pen = p_ctx
 }
 ; comment

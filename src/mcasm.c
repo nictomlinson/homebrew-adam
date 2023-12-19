@@ -21,32 +21,37 @@
 #define NELEMS(a) ((int)(sizeof(a) / sizeof((a)[0]))) // copied from LCC
 #define SET_BITS(n) ((1 << (n)) - 1) // value with lower n bits set
 
-#define SYSTEM_TOKENS          \
-	XX(T_EXPORT, "export")     \
-	XX(T_DEF, "def")           \
-	XX(T_SET, "set")           \
-	XX(T_ZET, "zet")           \
-	XX(T_FORGET, "forget")     \
-	XX(T_CMDSET, "cmdSet")     \
-	XX(T_PAGE, "page")         \
-	XX(T_GRP, "grp")           \
-	XX(T_COMMENT_START, ";")   \
-	XX(T_ON, "on")             \
-	XX(T_OFF, "off")           \
-	XX(T_EQ, "=")              \
-	XX(T_EQ_BRANCH, "=?")      \
-	XX(T_EQ_IMM, "=#")         \
-	XX(T_EQ_LABEL, "=:")       \
-	XX(T_CMD_GROUP_START, "{") \
-	XX(T_CMD_GROUP_END, "}")   \
-	XX(T_LABEL_SEP, ":")       \
-	XX(T_NL, "\n")             \
+#define SYSTEM_TOKENS             \
+	XX(T_EXPORT, "export")        \
+	XX(T_DEF, "def")              \
+	XX(T_SET, "set")              \
+	XX(T_ZET, "zet")              \
+	XX(T_PORT, "port")            \
+	XX(T_FORGET, "forget")        \
+	XX(T_CMDSET, "cmdSet")        \
+	XX(T_PAGE, "page")            \
+	XX(T_GRP, "grp")              \
+	XX(T_COMMENT_START, ";")      \
+	XX(T_ON, "on")                \
+	XX(T_OFF, "off")              \
+	XX(T_EQ, "=")                 \
+	/* Cmd with tst bit set */    \
+	XX(T_EQ_TEST, "=?")           \
+	/* Immediate cmd */           \
+	XX(T_EQ_IMM, "=#")            \
+	/* Immediate cmd; value */    \
+	/* from cmdGrp local label */ \
+	XX(T_EQ_LABEL, "=:")          \
+	XX(T_CMD_GROUP_START, "{")    \
+	XX(T_CMD_GROUP_END, "}")      \
+	XX(T_LABEL_SEP, ":")          \
+	XX(T_NL, "\n")                \
 	XX(T_EOF, "") /* must be the last */
 
-#define CMD_TYPE_IMM 1
-#define CMD_TYPE_PORT 0
-#define CMD_BRANCH 1
-#define CMD_NO_BRANCH 0
+#define CMD_TYPE_IMM 0
+#define CMD_TYPE_PORT 1
+#define CMD_TST 0
+#define CMD_NO_TST 1
 
 enum errClass { CONTINUE, TRACE, WARN, ERROR, FATAL };
 #define RED
@@ -57,10 +62,11 @@ const char *errClassStr[] = {"", "", "\033[95mwarning: \033[0m",
 struct cmd {
 	const char *referencedLabel;
 	const char *label;
-	const char *srcName;
-	const char *assignType;
+	const char *dOpt[MAX_OPTIONS];
 	const char *dstName;
-	const char *opt[MAX_OPTIONS];
+	const char *assignType;
+	const char *sOpt[MAX_OPTIONS];
+	const char *srcName;
 	bool isUsed; // true if this slot, or any later, are defined
 	uint16_t cv; // the microcode Command Value
 };
@@ -79,7 +85,7 @@ struct symbols {
 	const char *id;
 	int value;
 	Symbol next;
-} *symbols = NULL;
+} *symbols = NULL, *ports = NULL;
 
 #define XX(name, str) const char *name;
 SYSTEM_TOKENS
@@ -97,6 +103,18 @@ int cmdSet;	 // current command set
 int page;	 // current command page
 bool export; // true if exporting newly defined identifiers
 
+/* Command layout
+	  iDDDDdddtSSSSsss
+   where:
+	i    0 => immediate instruction;
+		source value is a constant with value tSSSSsss
+	DDDD destination option
+	ddd  destination port
+	t    0 => test and conditionally execute
+	SSSS source option
+	sss  source port
+*/
+
 // extract parts of a Command Value
 int cvType(uint16_t cv) {
 	return (cv >> 15) & 1;
@@ -104,44 +122,61 @@ int cvType(uint16_t cv) {
 bool cvIsImm(uint16_t cv) {
 	return cvType(cv) == CMD_TYPE_IMM;
 }
-int cvOpt(uint16_t cv) {
+int cvDOpt(uint16_t cv) {
 	return (cv >> 11) & 0xf;
 }
-int cvBranch(uint16_t cv) {
-	return (cv >> 10) & 1;
-}
 int cvDst(uint16_t cv) {
-	return cv & SET_BITS(cvIsImm(cv) ? 3 : 5);
+	return (cv >> 8) & SET_BITS(3);
+}
+int cvDSpec(uint16_t cv) {
+	return (cv >> 8) & SET_BITS(7);
+}
+int cvTst(uint16_t cv) {
+	return (cv >> 7) & 1;
+}
+int cvSOpt(uint16_t cv) {
+	return (cv >> 3) & 0xf;
 }
 int cvSrc(uint16_t cv) {
-	if (cvIsImm(cv)) {
-		return (cv >> 3) & 0xff;
-	} else {
-		return (cv >> 5) & SET_BITS(5);
-	}
+	return cv & SET_BITS(5);
 }
-uint16_t labelCv(uint16_t cv, int label) {
-	uint16_t mask = 0xf << 3;
-	return (cv & (~mask)) | ((label << 3) & mask);
+int cvSSpec(uint16_t cv) {
+	return cv & SET_BITS(7);
+}
+int cvImm(uint16_t cv) {
+	return cv & 0xff;
 }
 
 uint16_t prepend(uint16_t current, int len, int v) {
 	return (current << len) | (v & SET_BITS(len));
 }
-// Construct numeric representation of a command from its parts
-uint16_t makeCv(int type, int opt, int branch, int src, int dst) {
+// Construct numeric representation of a source port command from its parts
+// dSpec and sSpec combine the option and port
+uint16_t makePortCv(int dOpt, int dst, int tst, int sOpt, int src) {
 	uint16_t v = 0;
-	v = type & 1;
-	v = prepend(v, 4, opt & 0xf);
-	if (type == CMD_TYPE_IMM) {
-		v = prepend(v, 8, src);
-		v = prepend(v, 3, dst);
-	} else {
-		v = prepend(v, 1, branch);
-		v = prepend(v, 5, src);
-		v = prepend(v, 5, dst);
-	}
+	// Allow the dst and src to include options
+	uint16_t dSpec = (dOpt & SET_BITS(4) << 3) | (dst & SET_BITS(7));
+	uint16_t sSpec = (sOpt & SET_BITS(4) << 3) | (src & SET_BITS(7));
+	v = CMD_TYPE_PORT;
+	v = prepend(v, 7, dSpec);
+	v = prepend(v, 1, tst);
+	v = prepend(v, 7, sSpec);
 	return v;
+}
+// Construct numeric representation of an immediate command from its parts
+// dSpec and sSpec combine the option and port
+uint16_t makeImmCv(int dOpt, int dst, int value) {
+	uint16_t v = 0;
+	// Allow the dst to include options
+	uint16_t dSpec = ((dOpt & SET_BITS(4)) << 3) | (dst & SET_BITS(7));
+	v = CMD_TYPE_IMM;
+	v = prepend(v, 7, dSpec);
+	v = prepend(v, 8, value);
+	return v;
+}
+/* set the source value for an immediate cmd from a label */
+uint16_t labelCv(uint16_t cv, int label) {
+	return makeImmCv(cvDOpt(cv), cvDst(cv), label);
 }
 
 void print(enum errClass class, const char *msg, ...) {
@@ -167,18 +202,33 @@ void print(enum errClass class, const char *msg, ...) {
 		exit(EXIT_FAILURE);
 }
 
+void printBinary(const char *fmt, int value) {
+	int len = strlen(fmt);
+	int bit = 1 << len;
+	for (int c = 0; fmt[c]; c++) {
+		if (fmt[c] == '_') {
+			print(CONTINUE, "_%c", value & bit ? '1' : '0');
+			bit >>= 1;
+		} else if (fmt[c] == 'c') {
+			print(CONTINUE, "%c", value & bit ? '1' : '0');
+			bit >>= 1;
+		} else
+			print(FATAL, "Unexpected character, %c, in binary Format.", fmt[c]);
+	}
+}
+
 void printCmdVal(uint16_t cv) {
-	// formats define on bit per character with _ indicating the bit
-	// should be preceded by an underscore.
-	static const char *bit_format_imm = "c_ccc_ccccccc_cc";
-	static const char *bit_format_port = "c_ccc__cccc_cccc";
-	const char *bit_format = cvIsImm(cv) ? bit_format_imm : bit_format_port;
-	int bit = 1 << 15;
-	for (int c = 0; bit; c++, bit >>= 1) {
-		if (bit_format[c] == '_')
-			print(CONTINUE, "_%c", cv & bit ? '1' : '0');
-		else
-			print(CONTINUE, "%c", cv & bit ? '1' : '0');
+	// formats define one bit per character with
+	//  _ : print a bit preceeded by an underscore
+	//  c : print a bit
+	//  else: print the character.
+	static const char *bit_format_imm = "c_ccc_cc_ccccccc";
+	static const char *bit_format_port = "c_ccc_cc__ccc_cc";
+	if (cvIsImm(cv)) {
+		printBinary(bit_format_imm, cv);
+		print(CONTINUE, "  ");
+	} else {
+		printBinary(bit_format_port, cv);
 	}
 }
 
@@ -187,25 +237,33 @@ void printCmd(const struct cmd *c) {
 	if (!c->isUsed)
 		return;
 	print(TRACE, "");
-	print(CONTINUE, "<0x%x / 0b", c->cv);
+	print(CONTINUE, "<0x%4.4x / 0b", c->cv);
 	printCmdVal(c->cv);
 	print(CONTINUE, ">");
 	if (c->label != NULL) {
 		print(CONTINUE, "  %s : ", c->label);
 	} else
 		print(CONTINUE, "    ");
-	if (cvType(c->cv) == CMD_TYPE_IMM) {
-		print(CONTINUE, "%s [%d] %s %s [%d]", c->dstName, cvDst(c->cv),
-			  c->assignType, c->srcName, cvSrc(c->cv));
-	} else {
-		print(CONTINUE, "%s [%d] %s %s [%d]", c->dstName, cvDst(c->cv),
-			  c->assignType, c->srcName, cvSrc(c->cv));
+	print(CONTINUE, "%s", c->dstName);
+	for (optCnt = 0; optCnt < MAX_OPTIONS && c->dOpt[optCnt]; optCnt++) {
+		print(CONTINUE, " , %s", c->dOpt[optCnt]);
 	}
-	for (; optCnt < MAX_OPTIONS && c->opt[optCnt]; optCnt++) {
-		print(CONTINUE, " %s", c->opt[optCnt]);
+	print(CONTINUE, " [0b");
+	printBinary("cccc_cc", cvDSpec(c->cv));
+	print(CONTINUE, "]");
+	if (cvIsImm(c->cv)) {
+		print(CONTINUE, "%s %s [%d]", c->assignType, c->srcName, cvImm(c->cv));
+	} else {
+		print(CONTINUE, "%s %s", c->assignType, c->srcName);
+		for (optCnt = 0; optCnt < MAX_OPTIONS && c->sOpt[optCnt]; optCnt++) {
+			print(CONTINUE, " , %s", c->sOpt[optCnt]);
+		}
+		print(CONTINUE, " [0b");
+		printBinary("cccc_cc", cvSSpec(c->cv));
+		print(CONTINUE, "]");
 	}
 	if (optCnt > 0)
-		print(CONTINUE, " [%d]", cvOpt(c->cv));
+		print(CONTINUE, " [%d]", cvSOpt(c->cv));
 	print(CONTINUE, "\n");
 }
 
@@ -245,8 +303,8 @@ const char *intern(char *s, int len) {
 }
 
 // Returns Symbol if id is registered else NULL
-Symbol findSymbol(const char *id) {
-	Symbol nxt = symbols;
+Symbol findSymbol(Symbol symList, const char *id) {
+	Symbol nxt = symList;
 	while (nxt) {
 		if (nxt->id == id) {
 			;
@@ -257,17 +315,24 @@ Symbol findSymbol(const char *id) {
 	return NULL;
 }
 
-Symbol addSymbol(const char *id, int value) {
-	Symbol sym = findSymbol(id);
+Symbol addSymbolToList(Symbol *symList, const char *name, const char *id,
+					   int value) {
+	Symbol sym = findSymbol(*symList, id);
 	if (sym == NULL) {
 		sym = malloc(sizeof(struct symbols));
 		sym->id = id;
 		sym->value = value;
-		sym->next = symbols;
-		symbols = sym;
-		print(TRACE, "added new symbol: %s = %d\n", id, value);
+		sym->next = *symList;
+		*symList = sym;
+		print(TRACE, "added new %s: %s = %d\n", name, id, value);
 	}
 	return sym;
+}
+Symbol addSymbol(const char *id, int value) {
+	return addSymbolToList(&symbols, "symbol", id, value);
+}
+Symbol addPort(const char *id, int value) {
+	return addSymbolToList(&ports, "port", id, value);
 }
 
 int significant(int c) {
@@ -378,8 +443,8 @@ void parseExport() {
 }
 
 // If id is an identifier set value to its value and return true
-bool resolveIdentifier(const char *id, int *value) {
-	Symbol nxt = symbols;
+bool resolveIdentifier(Symbol symList, const char *id, int *value) {
+	Symbol nxt = symList;
 	while (nxt) {
 		if (nxt->id == id) {
 			*value = nxt->value;
@@ -412,10 +477,10 @@ long binStrToL(const char *str, char **sNxt) {
  *  Otherwise, treats s as the string representation of a hex, binary or decimal
  *  number, parses that number and returns that as the value.
  */
-int deriveSymbolValue(const char *s) {
+int deriveSymbolValueFromList(Symbol symList, const char *type, const char *s) {
 	char *sNxt;
 	int result = 0;
-	if (resolveIdentifier(s, &result))
+	if (resolveIdentifier(symList, s, &result))
 		return result;
 	if (s[0] == '0' && s[1] == 'x') {
 		result = strtol(s, &sNxt, 16);
@@ -426,14 +491,28 @@ int deriveSymbolValue(const char *s) {
 	}
 	if (sNxt[0] == '\0')
 		return result;
-	print(ERROR, "error parsing value %s\n", s);
+	print(ERROR, "error deriving value for %s %s\n", type, s);
 	return -1;
 }
-
+int deriveSymbolValue(const char *s) {
+	return deriveSymbolValueFromList(symbols, "symbol", s);
+}
+int derivePortValue(const char *s) {
+	return deriveSymbolValueFromList(ports, "port", s);
+}
 void parseDef() {
 	const char *id = readWord();
-	const char *valStr = readWord();
-	int value = deriveSymbolValue(valStr);
+	int value = -1;
+	if (tokenIsLineTerm(id)) {
+		print(ERROR, "No symbol defined\n");
+		return;
+	}
+	if (tokenIsLineTerm(peekWord())) {
+		print(ERROR, "No value for symbol %s\n", id);
+	} else {
+		const char *valStr = readWord();
+		value = deriveSymbolValue(valStr);
+	}
 	addSymbol(id, value);
 	expectLineEnd();
 }
@@ -445,10 +524,28 @@ void parseSet(bool zeroInit) {
 		lastVal++;
 	}
 }
+
+void parsePort() {
+	const char *id = readWord();
+	int value = -1;
+	if (tokenIsLineTerm(id)) {
+		print(ERROR, "No port defined\n");
+		return;
+	}
+	if (tokenIsLineTerm(peekWord()))
+		print(ERROR, "No value for port %s\n", id);
+	else {
+		const char *valStr = readWord();
+		value = derivePortValue(valStr);
+	}
+	addPort(id, value);
+	expectLineEnd();
+}
+
 void parseForget() {
 	const char *forgetTo = readWord();
 	int forgetCnt = 0;
-	if (forgetTo == T_NL || forgetTo == T_EOF) {
+	if (tokenIsLineTerm(forgetTo)) {
 		forgetTo = NULL;
 		print(TRACE, "Forgetting all\n");
 	} else {
@@ -486,9 +583,19 @@ void parsePage() {
 		print(ERROR, "Page, %d, is out of range 0..%d\n", page, maxPage);
 	expectLineEnd();
 }
+bool peekWordIsAssignment() {
+	const char *nxtWord = peekWord();
+	return (nxtWord == T_EQ || nxtWord == T_EQ_IMM || nxtWord == T_EQ_LABEL ||
+			nxtWord == T_EQ_TEST);
+}
 
+// The source and destination are constructed from a sequence of
+// words. The first word is assumed to be a port but can also include
+// options. It is thus allowed to be 7 bits long. The subsequent words,
+// if any, are options. Options are ordered together and will be shifted
+// right by 3 bits when the command value is constructed
 void parseCmd(struct cmd *c) {
-	int type = 0, opt = 0, branch = 0, src = 0, dst = 0;
+	int dOpt = 0, sOpt = 0, tst = 0, src = 0, dst = 0;
 	int optCnt;
 	c->isUsed = true;
 	c->dstName = readWord(); // assume no label
@@ -497,42 +604,38 @@ void parseCmd(struct cmd *c) {
 		c->label = c->dstName;
 		c->dstName = readWord();
 	}
-	dst = deriveSymbolValue(c->dstName);
+	dst = derivePortValue(c->dstName);
 
+	for (optCnt = 0, dOpt = 0; !peekWordIsAssignment() && optCnt < MAX_OPTIONS;
+		 optCnt++) {
+		c->dOpt[optCnt] = readWord();
+		dOpt |= derivePortValue(c->dOpt[optCnt]);
+	}
+	if (!peekWordIsAssignment())
+		print(ERROR, "Unexpected assignment type; max options %d\n",
+			  MAX_OPTIONS);
 	c->assignType = readWord();
-	if (c->assignType != T_EQ && c->assignType != T_EQ_IMM &&
-		c->assignType != T_EQ_LABEL && c->assignType != T_EQ_BRANCH)
-		print(ERROR, "Unexpected assignment type\n");
 
 	c->srcName = readWord();
-	if (c->assignType == T_EQ) {
-		type = CMD_TYPE_PORT;
-		branch = CMD_NO_BRANCH;
+	if (c->assignType == T_EQ_IMM) {
 		src = deriveSymbolValue(c->srcName);
-	} else if (c->assignType == T_EQ_BRANCH) {
-		type = CMD_TYPE_PORT;
-		branch = CMD_BRANCH;
-		src = deriveSymbolValue(c->srcName);
-	} else if (c->assignType == T_EQ_IMM) {
-		type = CMD_TYPE_IMM;
-		src = deriveSymbolValue(c->srcName);
-	} else if (c->assignType == T_EQ_LABEL) { // T_EQ_LABEL
-		type = CMD_TYPE_IMM;
-		src = 0; // resolve later
+		c->cv = makeImmCv(dOpt, dst, src);
+	} else if (c->assignType == T_EQ_LABEL) {
+		c->cv = makeImmCv(dOpt, dst, 0); // resolve src value later
 		c->referencedLabel = c->srcName;
 	} else {
-		print(ERROR, "How did we get here?\n");
+		src = derivePortValue(c->srcName);
+		for (optCnt = 0, sOpt = 0;
+			 !tokenIsLineTerm(peekWord()) && optCnt < MAX_OPTIONS; optCnt++) {
+			c->sOpt[optCnt] = readWord();
+			sOpt |= derivePortValue(c->sOpt[optCnt]);
+		}
+		if (optCnt > MAX_OPTIONS)
+			print(ERROR, "Too many options, max %d\n", MAX_OPTIONS);
+		tst = c->assignType == T_EQ_TEST ? CMD_TST : CMD_NO_TST;
+		c->cv = makePortCv(dOpt, dst, tst, sOpt, src);
 	}
-	for (optCnt = 0;
-		 optCnt < MAX_OPTIONS && peekWord() != T_NL && peekWord() != NULL;
-		 optCnt++) {
-		c->opt[optCnt] = readWord();
-		opt |= deriveSymbolValue(c->opt[optCnt]);
-	}
-	if (optCnt >= MAX_OPTIONS)
-		print(ERROR, "Too many options\n");
 	expectLineEnd();
-	c->cv = makeCv(type, opt, branch, src, dst);
 	return;
 }
 
@@ -559,10 +662,10 @@ void parseGrp() {
 	expectLineEnd();
 	print(TRACE, "cmdGrp: %s %d:%d:%d[0x%x]\n", grpName, cmdSet, page, cmdId,
 		  MC_ADDR(cmdId));
-	while (i < CMDS_PER_GRP && peekWord() != T_CMD_GROUP_END) {
+	for (i = 0; i < CMDS_PER_GRP && peekWord() != T_CMD_GROUP_END; i++) {
 		while (skipWordIf(T_NL))
 			;
-		parseCmd(&cmds[i++]);
+		parseCmd(&cmds[i]);
 	}
 	if (!skipWordIf(T_CMD_GROUP_END))
 		print(ERROR, "expected command group to terminate with }\n");
@@ -600,6 +703,8 @@ void parseStmt(const char *keyWord) {
 		parseSet(true);
 	else if (keyWord == T_SET)
 		parseSet(false);
+	else if (keyWord == T_PORT)
+		parsePort();
 	else if (keyWord == T_FORGET)
 		parseForget();
 	else if (keyWord == T_CMDSET)
@@ -614,6 +719,8 @@ void parseStmt(const char *keyWord) {
 
 void parseFile(const char *srcFile) {
 	fileName = srcFile;
+	line = 1;
+	col = 1;
 	if (srcFile == NULL || freopen(srcFile, "r", stdin) == NULL) {
 		print(FATAL, "Can't read %s\n", srcFile);
 	}

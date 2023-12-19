@@ -19,4 +19,4 @@ $Bmcasm:	$(S)mcasm.c
 	$(CC) $(CFLAGS) -I$(S) -o $@ $(S)mcasm.c
 
 $Bmccode.bin:	mcasm $(S)ports.ucode $(S)mcCode.ucode
-	$(B)mcasm -o $@ $(S)ports.ucode $(S)mcCode.ucode
+	$(B)mcasm -o $@ -t $(S)ports.ucode $(S)mcCode.ucode
