@@ -23,10 +23,8 @@
 	;	Port: 0
 	;		sOpt[3]: 0 => data stack, 1 => return stack
 	;		sOpt[2..0] => offset for the next read
-	;		-16, -14, -12, -10, -8, -6, -4, -2, +2, +4, +6, +8, +10, +12, +14, +16
-	; Read/Write stack_ptr:
-	;	Port: 8
-	; 
+	;		-8, -6, -4, -2, +2, +4, +6, +8
+	;
 	port p_dsOffset_nxt_psh1 0b0000_000
 	port p_dsOffset_nxt_psh2 0b0001_000
 	port p_dsOffset_nxt_psh3 0b0010_000
